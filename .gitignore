@@ -1,0 +1,61 @@
+# --- PYTHON ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.egg-info/
+*.egg
+*.log
+
+# --- VIRTUAL ENVIRONMENTS ---
+.venv/
+venv/
+env/
+
+# --- PIP / PACKAGES (wewnątrz .venv) ---
+pip-selfcheck.json
+
+# --- BUILD / CACHE ---
+build/
+dist/
+*.spec
+.cache/
+.mypy_cache/
+.pytest_cache/
+coverage.xml
+htmlcov/
+.coverage*
+
+# --- EDITORS / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- LINUX / RASPBERRY PI ---
+*.pid
+*.seed
+*.bak
+*.tmp
+
+# --- SYSTEMD LOGS ---
+*.service.log
+*.journal
+
+# --- BACKUPS ---
+*~
+*.backup
+*.bak
+*.old
+
+# --- LOCAL CONFIGS ---
+config.json
+*.local
+*.secret
+
+# --- IMAGES GENERATED ---
+*.png
+*.jpg
+*.jpeg
+
