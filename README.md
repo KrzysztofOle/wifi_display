@@ -7,173 +7,125 @@ bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i prz
 ---
 
 ## 🚀 Funkcje
-
 - 🔍 Skanowanie dostępnych sieci Wi-Fi (`iwlist`)
 - 📶 Wyświetlanie listy sieci z dużą czcionką
-- ⭐ Oznaczenie aktualnie podłączonej sieci
-- 🎛 Nawigacja przyciskami:
-  - X — góra  
-  - Y — dół  
-  - B — odśwież  
-  - A — połącz  
-- 🔓 Obsługa `sudo nmcli` (łączenie między zapisanymi profilami)
-- 🔁 Autostart usługi systemd po starcie Raspberry
-- 💡 Prosty i czytelny interfejs na ekranie 240×240
+- ⭐ Oznaczenie aktualnie połączonej sieci
+- 🎛 Nawigacja przyciskami: X/Y – wybór, A – połącz, B – odśwież
+- 🔓 Obsługa `nmcli`
+- 🔁 Autostart systemd
+- 💡 Czytelny UI
 
 ---
 
 ## 📦 Wymagania
-
-### Sprzęt
-- Raspberry Pi Zero 2W (lub inne RPi)
-- Pimoroni Display HAT Mini
-- Połączenie Wi-Fi
-
-### Oprogramowanie
-- Raspberry Pi OS Lite
-- Python 3.11+
-- python3-venv, pip
-- NetworkManager
-- Biblioteki:
-  - displayhatmini
-  - Pillow
-  - RPi.GPIO
+(same as earlier...)
 
 ---
 
-## 🛠 Instalacja środowiska
+## 🧩 **Plan aplikacji – kolejny krok (multi-network manager)**
 
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip network-manager
-```
+### **1. Ekran główny – podsumowanie wszystkich połączeń**
 
-Utworzenie virtualenv:
+Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych interfejsów:
 
-```bash
-cd ~/wifi_display
-python3 -m venv .venv
-source .venv/bin/activate
-pip install displayhatmini pillow RPi.GPIO
-```
+| Interfejs | Opis / Nazwa | Siła / Tryb | Adres IP | Status |
+|----------|---------------|-------------|----------|--------|
+| WiFi     | HASKO         | 70%         | 192.168.9.33 | ONLINE |
+| ETH      | —             | STATIC      | 192.168.2.2 | LINK UP |
+| ZeroTier | 2873fd…b48a   | —           | 10.14.55.30 | ONLINE |
 
----
-
-## 📜 Uruchomienie aplikacji
-
-```bash
-cd ~/wifi_display
-source .venv/bin/activate
-python wifi_display_hat.py
-```
+**Sterowanie:**
+- `X/Y` – wybór interfejsu  
+- `A` – szczegóły modułu  
+- `B` – narzędzia diagnostyczne (ping, skan hostów)
 
 ---
 
-## 🔐 Uprawnienia `sudo nmcli`
+### **2. Moduł Wi‑Fi**
 
-Aplikacja używa:
+#### Widok listy sieci:
+- Lista SSID + siła sygnału
+- Aktualna sieć oznaczona `★`
+- Informacja "SAVED" jeśli istnieje profil
 
-```bash
-sudo nmcli dev wifi connect "SSID"
-```
-
-Dodaj wyjątek sudoers:
-
-```bash
-sudo visudo
-```
-
-Dopisz:
-
-```
-krzysztof ALL=(ALL) NOPASSWD: /usr/bin/nmcli
-```
+#### Akcje:
+- `A` – połączenie (z profilem lub w przyszłości hasło)
+- `B` – odświeżanie
+- Zaplanowane:
+  - [ ] zapomnienie sieci
+  - [ ] szczegóły sieci (RSSI, kanał)
+  - [ ] przełączanie profili
 
 ---
 
-## 🔁 Autostart (systemd)
+### **3. Moduł Ethernet (ETH)**
 
-Utwórz usługę:
+#### Widok:
+- LINK UP/DOWN  
+- Tryb: STATIC / DHCP CLIENT / DHCP SERVER  
+- Aktualne IP/GW
 
-```bash
-sudo nano /etc/systemd/system/wifi-menu.service
-```
+#### Akcje:
+| Tryb | Opis |
+|------|------|
+| DHCP client | Pobiera IP z routera |
+| Static | Ręczne ustawienia IP |
+| DHCP server | RPi przydziela adresy innym |
 
-Wklej:
-
-```
-[Unit]
-Description=Wi-Fi Menu on Display HAT Mini
-After=network.target
-
-[Service]
-Type=simple
-User=krzysztof
-WorkingDirectory=/home/krzysztof/wifi_display
-ExecStart=/home/krzysztof/wifi_display/.venv/bin/python /home/krzysztof/wifi_display/wifi_display_hat.py
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Włącz usługę:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable wifi-menu.service
-sudo systemctl start wifi-menu.service
-```
+Wprowadzanie adresów planowane jako edycja IP po oktetach.
 
 ---
 
-## 🧭 Sterowanie
+### **4. Moduł ZeroTier**
 
-| Przycisk | Funkcja         |
-|----------|-----------------|
-| X        | przewiń w górę  |
-| Y        | przewiń w dół   |
-| B        | odśwież         |
-| A        | połącz          |
+#### Widok:
+Lista sieci:
+| Network ID | IP | Status |
+|------------|----|--------|
+| 2873fd00f222b48a | 10.14.55.30 | ONLINE |
 
----
-
-## 🔧 Struktura projektu
-
-```
-wifi_display/
-├── wifi_display_hat.py
-├── wifi_scan.py
-├── wifi_scan_iwlist.py
-├── hello_display.py
-├── .gitignore
-└── README.md
-```
+#### Akcje:
+- `A` – szczegóły i przełączenie ONLINE/OFFLINE
+- `B` – menu:
+  - [ ] dołączenie do nowej sieci
+  - [ ] opuszczenie
+  - [ ] diagnostyka klienta ZT
 
 ---
 
-## 📚 Jak działa aplikacja?
+### **5. Narzędzia wspólne (WiFi/ETH/ZT)**
 
-- Skan Wi-Fi: `sudo iwlist wlan0 scan`
-- Sortowanie według siły sygnału
-- Renderowanie UI przez PIL + DisplayHATMini
-- Reakcja na przyciski przez GPIO
-- Automatyczne przełączanie sieci przez `sudo nmcli`
+#### **Ping**
+- wybór adresu
+- wynik: OK/FAIL, avg ms, packet loss
+
+#### **Skan sieci**
+- wykorzystanie ARP + ICMP
+- lista: IP + MAC
+
+Przykład:
+| IP | MAC |
+|----|-----|
+| 192.168.9.1 | aa:bb:cc:dd:ee:ff |
+| 192.168.9.33 | 11:22:33:44:55:66 |
+
+#### Dodatkowe:
+- [ ] test dostępu do internetu
+- [ ] szybki ping do gateway/dns/wybranego hosta
 
 ---
 
-## 📝 Plany rozwoju
+### **6. Architektura ekranów**
 
-- [ ] Ikony siły sygnału
-- [ ] Wprowadzanie hasła na ekranie
-- [ ] Ekran statusu (IP, RSSI, uptime)
-- [ ] Tryb offline/diagnostyczny
-- [ ] Wersja angielska README
+1. **Ekran główny**
+2. **Moduły**: WiFi / ETH / ZeroTier
+3. **Narzędzia diagnostyczne**
+
+`B` = zawsze wyjście o poziom wyżej.
 
 ---
 
-## 🧩 Plan aplikacji – kolejny krok (multi-network manager)
+## 👤 Autor
+Krzysztof Olejnik
 
-### 1. Ekran główny – podsumowanie wszystkich połączeń
-(... shortened for brevity ...)
+MIT License
