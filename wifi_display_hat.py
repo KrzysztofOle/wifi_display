@@ -363,17 +363,17 @@ class WifiScreen(Screen):
         self.manager.clear()
         draw.text((5, 5), "Sieci Wi-Fi:", font=self.manager.font_large, fill=(0, 200, 255))
 
-        start_y = 40
-        line_h = 28
+        start_y = 45
+        line_h = 36
         max_rows = (self.manager.height - start_y) // line_h
         for idx, net in enumerate(self.networks[:max_rows]):
             y = start_y + idx * line_h
             cursor_mark = ">" if idx == self.cursor else " "
             active_mark = "★" if net.is_active else " "
-            saved_mark = "SAVED" if net.is_saved else ""
-            quality = f"{net.quality or 0}%"
-            text = f"{cursor_mark}{active_mark} {net.ssid:<12} {quality:<4} {saved_mark}"
-            draw.text((5, y), text, font=self.manager.font_small, fill=(255, 255, 255))
+            status_line = f"{cursor_mark}{active_mark} {net.ssid}"
+            detail_line = f"{net.quality or 0}% | {'SAVED' if net.is_saved else 'OPEN'}"
+            draw.text((5, y), status_line, font=self.manager.font_large, fill=(255, 255, 255))
+            draw.text((5, y + 20), detail_line, font=self.manager.font_small, fill=(150, 150, 150))
         self.manager.show()
 
     def handle_button(self, button_name: str) -> None:
