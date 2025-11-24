@@ -227,6 +227,7 @@ class ScreenManager:
         draw: ImageDraw.ImageDraw,
         display: DisplayHATMini,
         font_large,
+        font_medium,
         font_small,
     ):
         self.width = width
@@ -234,6 +235,7 @@ class ScreenManager:
         self.draw = draw
         self.display = display
         self.font_large = font_large
+        self.font_medium = font_medium
         self.font_small = font_small
 
         self._factories: Dict[str, Callable[["ScreenManager"], Screen]] = {}
@@ -364,16 +366,18 @@ class WifiScreen(Screen):
         draw.text((5, 5), "Sieci Wi-Fi:", font=self.manager.font_large, fill=(0, 200, 255))
 
         start_y = 45
-        line_h = 36
+        line_h = 32
         max_rows = (self.manager.height - start_y) // line_h
         for idx, net in enumerate(self.networks[:max_rows]):
             y = start_y + idx * line_h
             cursor_mark = ">" if idx == self.cursor else " "
             active_mark = "★" if net.is_active else " "
-            status_line = f"{cursor_mark}{active_mark} {net.ssid}"
-            detail_line = f"{net.quality or 0}% | {'SAVED' if net.is_saved else 'OPEN'}"
-            draw.text((5, y), status_line, font=self.manager.font_large, fill=(255, 255, 255))
-            draw.text((5, y + 20), detail_line, font=self.manager.font_small, fill=(150, 150, 150))
+            saved_label = "SAVED" if net.is_saved else "OPEN"
+            status_line = (
+                f"{cursor_mark}{active_mark} {net.ssid:<12} "
+                f"{(net.quality or 0):>3}% {saved_label}"
+            )
+            draw.text((5, y), status_line, font=self.manager.font_medium, fill=(255, 255, 255))
         self.manager.show()
 
     def handle_button(self, button_name: str) -> None:
@@ -438,6 +442,15 @@ def main():
     except:
         font_large = ImageFont.load_default()
 
+    # --- poprawka: dodanie czcionki pośredniej — 2025-11-24T20:49:24+01:00 ---
+    try:
+        font_medium = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            16
+        )
+    except:
+        font_medium = ImageFont.load_default()
+
     font_small = ImageFont.load_default()
 
     # --- poprawka: implementacja menedżera ekranów — 2025-11-24T20:49:24+01:00 ---
@@ -447,6 +460,7 @@ def main():
         draw=draw,
         display=display,
         font_large=font_large,
+        font_medium=font_medium,
         font_small=font_small,
     )
     manager.register_screen("main", MainScreen)
