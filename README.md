@@ -1,5 +1,6 @@
-# 📟 WiFi Display Manager for Raspberry Pi  
-### Sterowanie sieciami Wi-Fi z poziomu wyświetlacza Pimoroni Display HAT Mini
+# 📟 WiFi Display Manager for Raspberry Pi
+
+## Sterowanie sieciami Wi-Fi z poziomu wyświetlacza Pimoroni Display HAT Mini
 
 Projekt umożliwia zarządzanie sieciami Wi-Fi na Raspberry Pi Zero 2W  
 bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i przycisków.
@@ -7,6 +8,7 @@ bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i prz
 ---
 
 ## 🚀 Funkcje
+
 - 🔍 Skanowanie dostępnych sieci Wi-Fi (`iwlist`)
 - 📶 Wyświetlanie listy sieci z dużą czcionką
 - ⭐ Oznaczenie aktualnie połączonej sieci
@@ -18,6 +20,7 @@ bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i prz
 ---
 
 ## 📦 Wymagania
+
 (same as earlier...)
 
 ---
@@ -35,6 +38,7 @@ Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych 
 | ZeroTier | 2873fd…b48a   | —           | 10.14.55.30 | ONLINE |
 
 **Sterowanie:**
+
 - `X/Y` – wybór interfejsu  
 - `A` – szczegóły modułu  
 - `B` – narzędzia diagnostyczne (ping, skan hostów)
