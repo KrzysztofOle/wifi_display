@@ -302,7 +302,8 @@ class MainScreen(Screen):
     def render(self) -> None:
         draw = self.manager.draw_context
         self.manager.clear()
-        draw.text((5, 5), "Interfejsy:", font=self.manager.font_large, fill=(0, 200, 255))
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "INTERFEJSY:", font=self.manager.font_large, fill=(0, 0, 0))
 
         start_y = 40
         line_h = 34
@@ -363,7 +364,8 @@ class WifiScreen(Screen):
     def render(self) -> None:
         draw = self.manager.draw_context
         self.manager.clear()
-        draw.text((5, 5), "Sieci Wi-Fi:", font=self.manager.font_large, fill=(0, 200, 255))
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "SIECI WI-FI:", font=self.manager.font_large, fill=(0, 0, 0))
 
         start_y = 45
         line_h = 32
