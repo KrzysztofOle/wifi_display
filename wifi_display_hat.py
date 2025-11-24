@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
+"""
+High-level UI controller for Display HAT Mini Wi-Fi manager.
+
+Features (EN):
+- Manages a stack of screens (main overview and Wi-Fi module).
+- Provides navigation helpers bound to physical buttons (X/Y/A/B).
+- Integrates Wi-Fi scanning and connection handling with nmcli.
+
+Funkcje (PL):
+- Zarządza stosem ekranów (ekran główny oraz moduł Wi-Fi).
+- Udostępnia obsługę nawigacji powiązaną z przyciskami X/Y/A/B.
+- Integruje skanowanie i łączenie sieci Wi-Fi poprzez nmcli.
+
+File: wifi_display_hat.py
+"""
+
 import re
 import subprocess
 import time
 from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional
 
 from displayhatmini import DisplayHATMini
 import RPi.GPIO as GPIO
@@ -28,6 +45,17 @@ GPIO.setup(BUTTON_B, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 class WifiNetwork:
     ssid: str
     quality: int | None
+    is_active: bool = False
+    is_saved: bool = False
+
+
+@dataclass
+class InterfaceStatus:
+    name: str
+    description: str
+    metric: str
+    ip: str
+    status: str
 
 
 def scan_wifi_iwlist(iface: str = "wlan0") -> list[WifiNetwork]:
@@ -94,6 +122,291 @@ def get_active_ssid():
     return None
 
 
+# --- poprawka: dodanie helperów profili Wi-Fi i adresów IP — 2025-11-24T20:49:24+01:00 ---
+def get_saved_wifi_profiles() -> set[str]:
+    """
+    Zwraca zestaw nazw profili Wi-Fi zapisanych w NetworkManagerze.
+    """
+    result = subprocess.run(
+        ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    profiles = set()
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        name, conn_type = line.split(":", 1)
+        if conn_type.strip() == "802-11-wireless":
+            profiles.add(name.strip())
+    return profiles
+
+
+def get_ip_address(interface: str) -> Optional[str]:
+    """
+    Pobiera adres IPv4 przypisany do wskazanego interfejsu.
+    """
+    result = subprocess.run(
+        ["ip", "-4", "addr", "show", interface],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("inet "):
+            return line.split()[1].split("/")[0]
+    return None
+
+
+def gather_interface_statuses(active_ssid: Optional[str]) -> List[InterfaceStatus]:
+    """
+    Buduje listę statusów interfejsów na potrzeby ekranu głównego.
+    """
+    wifi_ip = get_ip_address("wlan0") or "—"
+    wifi_status = "ONLINE" if active_ssid else "OFFLINE"
+    wifi_desc = active_ssid or "Brak połączenia"
+    wifi_metric = "—"
+    statuses = [
+        InterfaceStatus(
+            name="WiFi",
+            description=wifi_desc,
+            metric=wifi_metric,
+            ip=wifi_ip,
+            status=wifi_status,
+        ),
+        InterfaceStatus(
+            name="ETH",
+            description="—",
+            metric="STATIC/DHCP",
+            ip=get_ip_address("eth0") or "—",
+            status="WIP",
+        ),
+        InterfaceStatus(
+            name="ZeroTier",
+            description="—",
+            metric="—",
+            ip="—",
+            status="WIP",
+        ),
+    ]
+    return statuses
+
+
+# --- poprawka: definicja bazowego ekranu oraz menedżera — 2025-11-24T20:49:24+01:00 ---
+class Screen:
+    def __init__(self, manager: "ScreenManager"):
+        self.manager = manager
+
+    def on_show(self) -> None:
+        self.refresh_data()
+        self.render()
+
+    def refresh_data(self) -> None:
+        raise NotImplementedError
+
+    def render(self) -> None:
+        raise NotImplementedError
+
+    def handle_button(self, button_name: str) -> None:
+        raise NotImplementedError
+
+    def tick(self) -> None:
+        """
+        Opcjonalny hook aktualizujący logikę ekranów.
+        """
+
+
+class ScreenManager:
+    def __init__(
+        self,
+        *,
+        width: int,
+        height: int,
+        draw: ImageDraw.ImageDraw,
+        display: DisplayHATMini,
+        font_large,
+        font_small,
+    ):
+        self.width = width
+        self.height = height
+        self.draw = draw
+        self.display = display
+        self.font_large = font_large
+        self.font_small = font_small
+
+        self._factories: Dict[str, Callable[["ScreenManager"], Screen]] = {}
+        self._instances: Dict[str, Screen] = {}
+        self._stack: List[Screen] = []
+
+    def register_screen(self, name: str, factory: Callable[["ScreenManager"], Screen]) -> None:
+        self._factories[name] = factory
+
+    def get_screen(self, name: str) -> Screen:
+        if name not in self._instances:
+            if name not in self._factories:
+                raise KeyError(f"Brak fabryki dla ekranu '{name}'")
+            self._instances[name] = self._factories[name](self)
+        return self._instances[name]
+
+    def push(self, name: str) -> None:
+        screen = self.get_screen(name)
+        self._stack.append(screen)
+        screen.on_show()
+
+    def pop(self) -> None:
+        if len(self._stack) > 1:
+            self._stack.pop()
+            self._stack[-1].on_show()
+
+    def handle_button(self, button_name: str) -> None:
+        if self._stack:
+            self._stack[-1].handle_button(button_name)
+
+    def tick(self) -> None:
+        if self._stack:
+            self._stack[-1].tick()
+
+    @property
+    def draw_context(self) -> ImageDraw.ImageDraw:
+        return self.draw
+
+    def clear(self) -> None:
+        self.draw.rectangle((0, 0, self.width, self.height), fill=(0, 0, 0))
+
+    def show(self) -> None:
+        self.display.display()
+
+
+# --- poprawka: ekran główny i ekran Wi-Fi — 2025-11-24T20:49:24+01:00 ---
+class MainScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
+        self.interfaces: List[InterfaceStatus] = []
+        self.cursor = 0
+        self.last_refresh = 0.0
+        self.refresh_interval = 5.0
+
+    def refresh_data(self) -> None:
+        active_ssid = get_active_ssid()
+        self.interfaces = gather_interface_statuses(active_ssid)
+        if self.interfaces:
+            self.cursor = max(0, min(self.cursor, len(self.interfaces) - 1))
+        else:
+            self.cursor = 0
+        self.last_refresh = time.monotonic()
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.text((5, 5), "Interfejsy:", font=self.manager.font_large, fill=(0, 200, 255))
+
+        start_y = 40
+        line_h = 30
+        for idx, iface in enumerate(self.interfaces[:4]):
+            y = start_y + idx * line_h
+            prefix = ">" if idx == self.cursor else " "
+            text = f"{prefix}{iface.name:<4} {iface.description:<12} {iface.ip:<12} {iface.status}"
+            draw.text((5, y), text, font=self.manager.font_small, fill=(255, 255, 255))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "UP":
+            if self.interfaces:
+                self.cursor = max(0, self.cursor - 1)
+                self.render()
+        elif button_name == "DOWN":
+            if self.interfaces:
+                self.cursor = min(len(self.interfaces) - 1, self.cursor + 1)
+                self.render()
+        elif button_name == "A":
+            selected = self.interfaces[self.cursor] if self.interfaces else None
+            if selected and selected.name == "WiFi":
+                self.manager.push("wifi")
+        elif button_name == "B":
+            # B to miejsce na narzędzia diagnostyczne (w przyszłości)
+            pass
+
+    def tick(self) -> None:
+        if time.monotonic() - self.last_refresh > self.refresh_interval:
+            self.refresh_data()
+            self.render()
+
+
+class WifiScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
+        self.networks: List[WifiNetwork] = []
+        self.cursor = 0
+        self.last_refresh = 0.0
+        self.refresh_interval = 10.0
+
+    def refresh_data(self) -> None:
+        self.networks = scan_wifi_iwlist()
+        active_ssid = get_active_ssid()
+        saved_profiles = get_saved_wifi_profiles()
+        for net in self.networks:
+            net.is_active = net.ssid == active_ssid
+            net.is_saved = net.ssid in saved_profiles
+        if self.networks:
+            self.cursor = max(0, min(self.cursor, len(self.networks) - 1))
+        else:
+            self.cursor = 0
+        self.last_refresh = time.monotonic()
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.text((5, 5), "Sieci Wi-Fi:", font=self.manager.font_large, fill=(0, 200, 255))
+
+        start_y = 40
+        line_h = 28
+        max_rows = (self.manager.height - start_y) // line_h
+        for idx, net in enumerate(self.networks[:max_rows]):
+            y = start_y + idx * line_h
+            cursor_mark = ">" if idx == self.cursor else " "
+            active_mark = "★" if net.is_active else " "
+            saved_mark = "SAVED" if net.is_saved else ""
+            quality = f"{net.quality or 0}%"
+            text = f"{cursor_mark}{active_mark} {net.ssid:<12} {quality:<4} {saved_mark}"
+            draw.text((5, y), text, font=self.manager.font_small, fill=(255, 255, 255))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "UP":
+            if self.networks:
+                self.cursor = max(0, self.cursor - 1)
+                self.render()
+        elif button_name == "DOWN":
+            if self.networks:
+                self.cursor = min(len(self.networks) - 1, self.cursor + 1)
+                self.render()
+        elif button_name == "A":
+            self._connect_selected()
+        elif button_name == "B":
+            self.manager.pop()
+
+    def _connect_selected(self) -> None:
+        if not self.networks:
+            return
+        chosen = self.networks[self.cursor]
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.text((5, 40), "Łączenie z:", font=self.manager.font_large, fill=(255, 255, 255))
+        draw.text((5, 80), chosen.ssid, font=self.manager.font_large, fill=(255, 255, 0))
+        self.manager.show()
+        connect_to_wifi(chosen.ssid)
+        time.sleep(2)
+        self.refresh_data()
+        self.render()
+
+    def tick(self) -> None:
+        if time.monotonic() - self.last_refresh > self.refresh_interval:
+            self.refresh_data()
+            self.render()
+
+
 def connect_to_wifi(ssid: str) -> None:
     """
     Próba połączenia z podaną siecią przez nmcli jako root (sudo).
@@ -114,81 +427,52 @@ def main():
     display = DisplayHATMini(buffer)
     display.set_backlight(1.0)
 
-    # --- DUŻA CZCIONKA (22 px) ---
     try:
-        font = ImageFont.truetype(
+        font_large = ImageFont.truetype(
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             22
         )
     except:
-        font = ImageFont.load_default()
+        font_large = ImageFont.load_default()
 
-    cursor = 0
+    font_small = ImageFont.load_default()
 
-    def redraw(networks, active_ssid, cursor_idx):
-        draw.rectangle((0, 0, width, height), fill=(0, 0, 0))
+    # --- poprawka: implementacja menedżera ekranów — 2025-11-24T20:49:24+01:00 ---
+    manager = ScreenManager(
+        width=width,
+        height=height,
+        draw=draw,
+        display=display,
+        font_large=font_large,
+        font_small=font_small,
+    )
+    manager.register_screen("main", MainScreen)
+    manager.register_screen("wifi", WifiScreen)
+    manager.push("main")
 
-        draw.text((5, 5), "Sieci Wi-Fi:", font=font, fill=(0, 200, 255))
-
-        start_y = 40
-        line_h = 30                     # większa czcionka = większy odstęp
-        max_rows = (height - start_y) // line_h
-
-        shown = networks[:max_rows]
-
-        for idx, net in enumerate(shown):
-            y = start_y + idx * line_h
-
-            cursor_mark = ">" if idx == cursor_idx else " "
-            active_mark = "*" if active_ssid == net.ssid else " "
-
-            quality = f"{net.quality or 0}%"
-
-            text = f"{cursor_mark}{active_mark} {net.ssid}   {quality}"
-            draw.text((5, y), text, font=font, fill=(255, 255, 255))
-
-        display.display()
-
-    networks = scan_wifi_iwlist()
-    active_ssid = get_active_ssid()
-    redraw(networks, active_ssid, cursor)
+    button_map: Dict[int, str] = {
+        BUTTON_X: "UP",
+        BUTTON_Y: "DOWN",
+        BUTTON_A: "A",
+        BUTTON_B: "B",
+    }
+    debounce = {
+        "UP": 0.0,
+        "DOWN": 0.0,
+        "A": 0.0,
+        "B": 0.0,
+    }
+    debounce_delay = 0.25
 
     try:
         while True:
-            if GPIO.input(BUTTON_X) == GPIO.LOW:   # góra
-                cursor = max(0, cursor - 1)
-                redraw(networks, active_ssid, cursor)
-                time.sleep(0.25)
-
-            if GPIO.input(BUTTON_Y) == GPIO.LOW:   # dół
-                cursor = min(len(networks) - 1, cursor + 1)
-                redraw(networks, active_ssid, cursor)
-                time.sleep(0.25)
-
-            if GPIO.input(BUTTON_B) == GPIO.LOW:   # odśwież
-                networks = scan_wifi_iwlist()
-                active_ssid = get_active_ssid()
-                cursor = min(cursor, len(networks) - 1)
-                redraw(networks, active_ssid, cursor)
-                time.sleep(0.4)
-
-            if GPIO.input(BUTTON_A) == GPIO.LOW:   # połącz
-                chosen = networks[cursor].ssid
-
-                draw.rectangle((0, 0, width, height), fill=(0, 0, 0))
-                draw.text((5, 40), "Łączenie z:", font=font, fill=(255, 255, 255))
-                draw.text((5, 80), chosen, font=font, fill=(255, 255, 0))
-                display.display()
-
-                connect_to_wifi(chosen)
-                time.sleep(3)
-
-                active_ssid = get_active_ssid()
-                redraw(networks, active_ssid, cursor)
-                time.sleep(0.4)
-
+            now = time.monotonic()
+            for pin, name in button_map.items():
+                if GPIO.input(pin) == GPIO.LOW and now - debounce[name] > debounce_delay:
+                    manager.handle_button(name)
+                    debounce[name] = now
+            manager.tick()
             time.sleep(0.05)
-
     except KeyboardInterrupt:
         pass
     finally:
@@ -198,4 +482,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
