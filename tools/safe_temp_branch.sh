@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# nadaj prawa wykonywania
+# chmod +x tools/safe_temp_branch.sh
+#
 # Użycie:
-#   ./safe_temp_branch.sh              → utworzy gałąź temp/YYYY-MM-DD
-#   ./safe_temp_branch.sh temp/2025-11-24  → utworzy dokładnie temp/2025-11-24
+#   ./tools/safe_temp_branch.sh              → utworzy gałąź temp/YYYY-MM-DD
+#   ./tools/safe_temp_branch.sh temp/2025-11-24  → utworzy dokładnie temp/2025-11-24
 #
 # Skrypt:
 # - sprawdza, czy jesteś w repo git
