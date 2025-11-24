@@ -303,12 +303,15 @@ class MainScreen(Screen):
         draw.text((5, 5), "Interfejsy:", font=self.manager.font_large, fill=(0, 200, 255))
 
         start_y = 40
-        line_h = 30
-        for idx, iface in enumerate(self.interfaces[:4]):
+        line_h = 34
+        max_rows = (self.manager.height - start_y) // line_h
+        for idx, iface in enumerate(self.interfaces[:max_rows]):
             y = start_y + idx * line_h
             prefix = ">" if idx == self.cursor else " "
-            text = f"{prefix}{iface.name:<4} {iface.description:<12} {iface.ip:<12} {iface.status}"
-            draw.text((5, y), text, font=self.manager.font_small, fill=(255, 255, 255))
+            text_main = f"{prefix}{iface.name} {iface.status}"
+            text_sub = f"{iface.description} | {iface.ip}"
+            draw.text((5, y), text_main, font=self.manager.font_large, fill=(255, 255, 255))
+            draw.text((5, y + 20), text_sub, font=self.manager.font_small, fill=(150, 150, 150))
         self.manager.show()
 
     def handle_button(self, button_name: str) -> None:
