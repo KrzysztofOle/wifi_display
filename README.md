@@ -130,12 +130,12 @@ sudo systemctl start wifi-menu.service
 
 ## 🧭 Sterowanie
 
-| Przycisk | Funkcja |
-|---------|---------|
-| X | przewiń w górę |
-| Y | przewiń w dół |
-| B | odśwież |
-| A | połącz |
+| Przycisk | Funkcja         |
+|----------|-----------------|
+| X        | przewiń w górę  |
+| Y        | przewiń w dół   |
+| B        | odśwież         |
+| A        | połącz          |
 
 ---
 
@@ -173,14 +173,7 @@ wifi_display/
 
 ---
 
-## 👤 Autor
+## 🧩 Plan aplikacji – kolejny krok (multi-network manager)
 
-**Krzysztof Olejnik**  
-Projekt opracowany na Raspberry Pi Zero 2W  
-przy wsparciu ChatGPT 🚀
-
----
-
-## ⭐ Licencja
-
-MIT — pełna dowolność użycia i modyfikacji.
+### 1. Ekran główny – podsumowanie wszystkich połączeń
+(... shortened for brevity ...)
