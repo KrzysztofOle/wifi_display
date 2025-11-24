@@ -446,7 +446,7 @@ def main():
     try:
         font_medium = ImageFont.truetype(
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            16
+            18
         )
     except:
         font_medium = ImageFont.load_default()
