@@ -133,6 +133,29 @@ def test_ethernet_screen_button_a_opens_actions(monkeypatch):
     assert manager._stack[-1] is actions
 
 
+def test_wifi_screen_button_a_opens_actions(monkeypatch):
+    manager = wifi_display_hat.ScreenManager(
+        width=320,
+        height=240,
+        draw=_DummyDraw(),
+        display=_DummyDisplay(),
+        font_large=object(),
+        font_medium=object(),
+        font_small=object(),
+    )
+    monkeypatch.setattr(wifi_display_hat, "get_active_ssid", lambda: "Office")
+    monkeypatch.setattr(wifi_display_hat, "get_ip_address", lambda iface: "10.0.0.5")
+    monkeypatch.setattr(wifi_display_hat, "get_saved_wifi_profiles", lambda: {"Office"})
+    monkeypatch.setattr(wifi_display_hat, "scan_wifi_iwlist", lambda: [])
+    manager.register_screen("wifi", wifi_display_hat.WifiScreen)
+    manager.register_screen("wifi_actions", wifi_display_hat.WifiActionsScreen)
+    manager.push("wifi")
+    actions = manager.get_screen("wifi_actions")
+    monkeypatch.setattr(actions, "render", lambda: None)
+    manager.handle_button("A")
+    assert manager._stack[-1] is actions
+
+
 def test_ethernet_actions_executes_handler(monkeypatch):
     called: dict[str, bool] = {}
 

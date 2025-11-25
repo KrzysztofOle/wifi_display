@@ -618,6 +618,60 @@ class MainScreen(Screen):
 class WifiScreen(Screen):
     def __init__(self, manager: "ScreenManager"):
         super().__init__(manager)
+        self.last_refresh = 0.0
+        self.refresh_interval = 8.0
+        self.active_ssid: Optional[str] = None
+        self.ip: str = "—"
+        self.status: str = "OFFLINE"
+        self.saved_count = 0
+        self.last_scan_total = 0
+
+    def refresh_data(self) -> None:
+        self.active_ssid = get_active_ssid()
+        self.ip = get_ip_address("wlan0") or "—"
+        self.status = "ONLINE" if self.active_ssid else "OFFLINE"
+        saved_profiles = get_saved_wifi_profiles()
+        self.saved_count = len(saved_profiles)
+        networks = scan_wifi_iwlist()
+        self.last_scan_total = len(networks)
+        self.last_refresh = time.monotonic()
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "WI-FI", font=self.manager.font_large, fill=(0, 0, 0))
+
+        lines = [
+            f"Status: {self.status}",
+            f"SSID: {self.active_ssid or 'Brak połączenia'}",
+            f"IP: {self.ip}",
+            f"Zapisane profile: {self.saved_count}",
+            f"Dostępne sieci: {self.last_scan_total}",
+        ]
+        y = 50
+        for text in lines:
+            draw.text((5, y), text, font=self.manager.font_medium, fill=(255, 255, 255))
+            y += 30
+        draw.text((5, self.manager.height - 30), "A=akcje Wi-Fi", font=self.manager.font_small, fill=(150, 150, 150))
+        draw.text((5, self.manager.height - 15), "B=powrót", font=self.manager.font_small, fill=(150, 150, 150))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "A":
+            self.manager.push("wifi_actions")
+        elif button_name == "B":
+            self.manager.pop()
+
+    def tick(self) -> None:
+        if time.monotonic() - self.last_refresh > self.refresh_interval:
+            self.refresh_data()
+            self.render()
+
+
+class WifiActionsScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
         self.networks: List[WifiNetwork] = []
         self.cursor = 0
         self.last_refresh = 0.0
@@ -655,6 +709,7 @@ class WifiScreen(Screen):
                 f"{(net.quality or 0):>3}% {saved_label}"
             )
             draw.text((5, y), status_line, font=self.manager.font_medium, fill=(255, 255, 255))
+        draw.text((5, self.manager.height - 20), "A=połącz  B=powrót", font=self.manager.font_small, fill=(150, 150, 150))
         self.manager.show()
 
     def handle_button(self, button_name: str) -> None:
@@ -1010,6 +1065,7 @@ def main():
     )
     manager.register_screen("main", MainScreen)
     manager.register_screen("wifi", WifiScreen)
+    manager.register_screen("wifi_actions", WifiActionsScreen)
     manager.register_screen("eth", EthernetScreen)
     manager.register_screen("eth_actions", EthernetActionsScreen)
     manager.register_screen("eth_static_config", EthernetStaticConfigScreen)

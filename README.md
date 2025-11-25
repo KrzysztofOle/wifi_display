@@ -62,14 +62,14 @@ Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych 
 
 #### Widok listy sieci':'
 
-- Lista SSID + siła sygnału
-- Aktualna sieć oznaczona `★`
-- Informacja "SAVED" jeśli istnieje profil
+- Ekran główny modułu pokazuje status, aktywne SSID, adres IP, liczbę zapisanych profili i wykrytą liczbę sieci.
+- `A` – przejście do ekranu akcji (lista sieci).
+- `B` – powrót do ekranu głównego.
 
 #### Akcje':'
 
-- `A` – połączenie (z profilem lub w przyszłości hasło)
-- `B` – odświeżanie
+- `A` (na ekranie akcji) – połączenie (z profilem lub w przyszłości hasło)
+- `B` (na ekranie akcji) – powrót do podsumowania Wi-Fi
 - Zaplanowane:
   - [ ] zapomnienie sieci
   - [ ] szczegóły sieci (RSSI, kanał)
@@ -168,6 +168,13 @@ Przykład:
 
 - [ ] test dostępu do internetu
 - [ ] szybki ping do gateway/dns/wybranego hosta
+
+---
+
+## 🌐 Planowane rozszerzenia sieciowe
+
+- Obsługa protokołów Ethernet: TCP, UDP, Modbus TCP, OPC UA, MQTT (i kolejne).
+- Tryby działania jako bramka, narzędzie diagnostyczne, Edge device oraz zdalny terminal.
 
 ---
 
