@@ -17,6 +17,7 @@ bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i prz
 - 🔁 Autostart systemd
 - 💡 Czytelny UI
 - 🌐 Podgląd statusu Ethernet (link, tryb, adres IP)
+- 🛠 Menu akcji Ethernet (DHCP/Static/DHCP server)
 
 ### Sterowanie usługą `wifi-menu.service`
 
@@ -82,6 +83,8 @@ Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych 
 - LINK UP/DOWN  
 - Tryb: STATIC / DHCP CLIENT / DHCP SERVER  
 - Aktualne IP/GW
+- `A` – otwiera „Akcje Ethernet”
+- `B` – powrót
 
 #### Akcje
 
@@ -92,6 +95,27 @@ Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych 
 | DHCP server | RPi przydziela adresy innym |
 
 Wprowadzanie adresów planowane jako edycja IP po oktetach.
+
+#### Akcje Ethernet – ekran
+
+- Lista trybów (DHCP client / Static / DHCP server) z opisami.
+- `A` – wykonuje akcję (nmcli: auto/manual/shared).
+- `B` – powrót do widoku ETH.
+
+**Zmienne środowiskowe dla statycznych ustawień:**
+
+| Nazwa | Domyślna wartość | Opis |
+|-------|------------------|------|
+| `ETH_STATIC_IP` | `192.168.50.10/24` | Adres IP/prefix dla trybu Static |
+| `ETH_STATIC_GATEWAY` | `192.168.50.1` | Brama domyślna w trybie Static |
+| `ETH_STATIC_DNS` | `1.1.1.1` | DNS w trybie Static |
+| `ETH_SHARED_IP` | `10.42.0.1/24` | Adres interfejsu przy DHCP server (`ipv4.method shared`) |
+
+**Edycja adresu statycznego w UI:**
+
+- `X (UP)` / `Y (DOWN)` – zwiększ/zmniejsz bieżący segment (IP, prefix, gateway, DNS).
+- `A` – przejdź do kolejnego segmentu, a po ostatnim zapisz i zastosuj ustawienia.
+- `B` – powrót do menu akcji bez zapisu.
 
 ---
 

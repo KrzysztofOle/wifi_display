@@ -15,11 +15,12 @@ Funkcje (PL):
 File: wifi_display_hat.py
 """
 
+import os
 import re
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from displayhatmini import DisplayHATMini
 import RPi.GPIO as GPIO
@@ -66,6 +67,24 @@ class EthernetDetails:
     ip: str
     gateway: str
     dns: str
+
+
+# --- poprawka: opis akcji Ethernet — 2025-11-25T16:12:15Z ---
+@dataclass
+class EthernetAction:
+    title: str
+    description: str
+    handler: Optional[Callable[[], Tuple[bool, str]]] = None
+    screen: Optional[str] = None
+
+
+# --- poprawka: konfiguracja statycznych adresów — 2025-11-25T16:12:15Z ---
+@dataclass
+class StaticIpConfig:
+    ip: List[int]
+    prefix: int
+    gateway: List[int]
+    dns: List[int]
 
 
 def scan_wifi_iwlist(iface: str = "wlan0") -> list[WifiNetwork]:
@@ -168,6 +187,205 @@ def get_ip_address(interface: str) -> Optional[str]:
         if line.startswith("inet "):
             return line.split()[1].split("/")[0]
     return None
+
+
+# --- poprawka: pomocnicze operacje nmcli dla Ethernet — 2025-11-25T16:12:15Z ---
+def _clamp(value: int, minimum: int = 0, maximum: int = 255) -> int:
+    return max(minimum, min(maximum, value))
+
+
+def _parse_octets(value: str, fallback: List[int]) -> List[int]:
+    parts = value.split(".") if value else []
+    octets = []
+    for idx in range(4):
+        try:
+            octets.append(_clamp(int(parts[idx])))
+        except (ValueError, IndexError):
+            octets.append(fallback[idx])
+    return octets
+
+
+def _parse_prefix(value: str, fallback: int = 24) -> int:
+    try:
+        prefix = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return _clamp(prefix, 8, 30)
+
+
+def _format_ip(octets: List[int]) -> str:
+    return ".".join(f"{val:03d}" for val in octets)
+
+
+def _format_address(octets: List[int]) -> str:
+    return ".".join(str(val) for val in octets)
+
+
+def _load_static_config_from_env() -> StaticIpConfig:
+    env_ip = os.environ.get("ETH_STATIC_IP", "192.168.50.10/24")
+    if "/" in env_ip:
+        ip_part, prefix_part = env_ip.split("/", 1)
+    else:
+        ip_part, prefix_part = env_ip, "24"
+    ip_octets = _parse_octets(ip_part, [192, 168, 50, 10])
+    prefix = _parse_prefix(prefix_part, 24)
+    gw_octets = _parse_octets(os.environ.get("ETH_STATIC_GATEWAY", "192.168.50.1"), [192, 168, 50, 1])
+    dns_octets = _parse_octets(os.environ.get("ETH_STATIC_DNS", "1.1.1.1"), [1, 1, 1, 1])
+    return StaticIpConfig(ip=ip_octets, prefix=prefix, gateway=gw_octets, dns=dns_octets)
+
+
+STATIC_IP_CONFIG = _load_static_config_from_env()
+
+
+def get_static_config() -> StaticIpConfig:
+    return StaticIpConfig(
+        ip=list(STATIC_IP_CONFIG.ip),
+        prefix=STATIC_IP_CONFIG.prefix,
+        gateway=list(STATIC_IP_CONFIG.gateway),
+        dns=list(STATIC_IP_CONFIG.dns),
+    )
+
+
+def set_static_config(new_config: StaticIpConfig) -> None:
+    STATIC_IP_CONFIG.ip = list(new_config.ip)
+    STATIC_IP_CONFIG.prefix = new_config.prefix
+    STATIC_IP_CONFIG.gateway = list(new_config.gateway)
+    STATIC_IP_CONFIG.dns = list(new_config.dns)
+
+
+# --- poprawka: pomocnicze operacje nmcli dla Ethernet — 2025-11-25T16:12:15Z ---
+def get_eth_connection_name(interface: str = "eth0") -> str:
+    result = subprocess.run(
+        ["nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return interface
+    for line in result.stdout.splitlines():
+        if not line.strip() or ":" not in line:
+            continue
+        name, device = line.split(":", 1)
+        if device.strip() == interface:
+            return name.strip()
+    return interface
+
+
+def _run_nmcli_commands(commands: List[List[str]]) -> Tuple[bool, str]:
+    for cmd in commands:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            error = result.stderr.strip() or "Nieznany błąd nmcli"
+            return False, error
+    return True, "Zastosowano ustawienia"
+
+
+def _configure_eth_dhcp_client(interface: str = "eth0") -> Tuple[bool, str]:
+    connection = get_eth_connection_name(interface)
+    commands = [
+        [
+            "sudo",
+            "nmcli",
+            "connection",
+            "modify",
+            connection,
+            "ipv4.method",
+            "auto",
+            "ipv4.addresses",
+            "",
+            "ipv4.gateway",
+            "",
+            "ipv4.dns",
+            "",
+            "ipv4.never-default",
+            "no",
+        ],
+        ["sudo", "nmcli", "connection", "up", connection],
+    ]
+    return _run_nmcli_commands(commands)
+
+
+def _get_static_config() -> Tuple[str, str, str]:
+    cfg = STATIC_IP_CONFIG
+    ip = f"{_format_address(cfg.ip)}/{cfg.prefix}"
+    gateway = _format_address(cfg.gateway)
+    dns = _format_address(cfg.dns)
+    return ip, gateway, dns
+
+
+def _configure_eth_static(interface: str = "eth0") -> Tuple[bool, str]:
+    connection = get_eth_connection_name(interface)
+    ip, gateway, dns = _get_static_config()
+    commands = [
+        [
+            "sudo",
+            "nmcli",
+            "connection",
+            "modify",
+            connection,
+            "ipv4.method",
+            "manual",
+            "ipv4.addresses",
+            ip,
+            "ipv4.gateway",
+            gateway,
+            "ipv4.dns",
+            dns,
+            "ipv4.never-default",
+            "yes",
+        ],
+        ["sudo", "nmcli", "connection", "up", connection],
+    ]
+    return _run_nmcli_commands(commands)
+
+
+def _configure_eth_shared(interface: str = "eth0") -> Tuple[bool, str]:
+    connection = get_eth_connection_name(interface)
+    shared_ip = os.environ.get("ETH_SHARED_IP", "10.42.0.1/24")
+    commands = [
+        [
+            "sudo",
+            "nmcli",
+            "connection",
+            "modify",
+            connection,
+            "ipv4.method",
+            "shared",
+            "ipv4.addresses",
+            shared_ip,
+            "ipv4.dns",
+            "",
+            "ipv4.never-default",
+            "yes",
+        ],
+        ["sudo", "nmcli", "connection", "up", connection],
+    ]
+    return _run_nmcli_commands(commands)
+
+
+ETHERNET_ACTIONS: List[EthernetAction] = [
+    EthernetAction(
+        title="DHCP client",
+        description="Automatyczne pobieranie adresu z routera",
+        handler=_configure_eth_dhcp_client,
+    ),
+    EthernetAction(
+        title="Static",
+        description="Stały adres edytowany w aplikacji",
+        screen="eth_static_config",
+    ),
+    EthernetAction(
+        title="DHCP server",
+        description="Udostępnianie internetu (ipv4.method shared)",
+        handler=_configure_eth_shared,
+    ),
+]
 
 
 def gather_interface_statuses(active_ssid: Optional[str]) -> List[InterfaceStatus]:
@@ -505,13 +723,12 @@ class EthernetScreen(Screen):
         for text in lines:
             draw.text((5, y), text, font=self.manager.font_medium, fill=(255, 255, 255))
             y += 28
-        draw.text((5, self.manager.height - 20), "A=odśwież  B=powrót", font=self.manager.font_small, fill=(120, 120, 120))
+        draw.text((5, self.manager.height - 20), "A=akcje  B=powrót", font=self.manager.font_small, fill=(120, 120, 120))
         self.manager.show()
 
     def handle_button(self, button_name: str) -> None:
         if button_name == "A":
-            self.refresh_data()
-            self.render()
+            self.manager.push("eth_actions")
         elif button_name == "B":
             self.manager.pop()
 
@@ -519,6 +736,161 @@ class EthernetScreen(Screen):
         if time.monotonic() - self.last_refresh > self.refresh_interval:
             self.refresh_data()
             self.render()
+
+
+# --- poprawka: ekran akcji Ethernet — 2025-11-25T16:12:15Z ---
+class EthernetActionsScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
+        self.actions = list(ETHERNET_ACTIONS)
+        self.cursor = 0
+
+    def refresh_data(self) -> None:
+        self.cursor = max(0, min(self.cursor, len(self.actions) - 1))
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "ETH: AKCJE", font=self.manager.font_large, fill=(0, 0, 0))
+
+        start_y = 50
+        line_h = 32
+        for idx, action in enumerate(self.actions):
+            y = start_y + idx * line_h
+            marker = ">" if idx == self.cursor else " "
+            draw.text((5, y), f"{marker} {action.title}", font=self.manager.font_medium, fill=(255, 255, 255))
+            draw.text((20, y + 18), action.description, font=self.manager.font_small, fill=(150, 150, 150))
+        draw.text((5, self.manager.height - 20), "A=wybór  B=powrót", font=self.manager.font_small, fill=(120, 120, 120))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "UP":
+            self.cursor = max(0, self.cursor - 1)
+            self.render()
+        elif button_name == "DOWN":
+            self.cursor = min(len(self.actions) - 1, self.cursor + 1)
+            self.render()
+        elif button_name == "A":
+            self._execute_current_action()
+        elif button_name == "B":
+            self.manager.pop()
+
+    def _show_status(self, title: str, body: str, footer: str = "B=powrót") -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.text((5, 50), title, font=self.manager.font_large, fill=(255, 255, 255))
+        draw.text((5, 90), body, font=self.manager.font_medium, fill=(255, 255, 0))
+        draw.text((5, self.manager.height - 20), footer, font=self.manager.font_small, fill=(120, 120, 120))
+        self.manager.show()
+
+    def _execute_current_action(self) -> None:
+        if not self.actions:
+            return
+        action = self.actions[self.cursor]
+        if action.screen:
+            self.manager.push(action.screen)
+            return
+        if not action.handler:
+            return
+        self._show_status(action.title, "Trwa stosowanie ustawień...")
+        success, message = action.handler()
+        if success:
+            body = message or "Zakończono powodzeniem"
+        else:
+            body = f"Błąd: {message}"
+        self._show_status(action.title, body)
+
+
+# --- poprawka: ekran konfiguracji statycznego IP Ethernet — 2025-11-25T16:12:15Z ---
+class EthernetStaticConfigScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
+        self.config = get_static_config()
+        self.cursor = 0
+        self.segments = self._build_segments()
+
+    def _build_segments(self) -> List[Tuple[str, Optional[int]]]:
+        segments: List[Tuple[str, Optional[int]]] = []
+        segments += [("IP", idx) for idx in range(4)]
+        segments.append(("PREFIX", None))
+        segments += [("GW", idx) for idx in range(4)]
+        segments += [("DNS", idx) for idx in range(4)]
+        return segments
+
+    def refresh_data(self) -> None:
+        self.config = get_static_config()
+        self.cursor = max(0, min(self.cursor, len(self.segments) - 1))
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "ETH STATIC", font=self.manager.font_large, fill=(0, 0, 0))
+
+        ip_line = f"IP: {_format_address(self.config.ip)}/{self.config.prefix}"
+        gw_line = f"GW: {_format_address(self.config.gateway)}"
+        dns_line = f"DNS: {_format_address(self.config.dns)}"
+        draw.text((5, 50), ip_line, font=self.manager.font_medium, fill=(255, 255, 255))
+        draw.text((5, 90), gw_line, font=self.manager.font_medium, fill=(200, 200, 200))
+        draw.text((5, 130), dns_line, font=self.manager.font_medium, fill=(200, 200, 200))
+
+        segment_label = self._segment_label()
+        draw.text((5, 170), f"Segment: {segment_label}", font=self.manager.font_small, fill=(180, 180, 0))
+        draw.text((5, self.manager.height - 30), "X/Y +/-  A=dalej/zapisz", font=self.manager.font_small, fill=(150, 150, 150))
+        draw.text((5, self.manager.height - 15), "B=powrót", font=self.manager.font_small, fill=(150, 150, 150))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "UP":
+            self._adjust_segment(1)
+            self.render()
+        elif button_name == "DOWN":
+            self._adjust_segment(-1)
+            self.render()
+        elif button_name == "A":
+            if self.cursor == len(self.segments) - 1:
+                self._save_and_apply()
+            else:
+                self.cursor = min(len(self.segments) - 1, self.cursor + 1)
+                self.render()
+        elif button_name == "B":
+            self.manager.pop()
+
+    def _segment_label(self) -> str:
+        field, idx = self.segments[self.cursor]
+        if field == "PREFIX":
+            return "IP prefix"
+        return f"{field} segment {idx + 1}"
+
+    def _adjust_segment(self, delta: int) -> None:
+        field, idx = self.segments[self.cursor]
+        if field == "IP" and idx is not None:
+            self.config.ip[idx] = (self.config.ip[idx] + delta) % 256
+        elif field == "GW" and idx is not None:
+            self.config.gateway[idx] = (self.config.gateway[idx] + delta) % 256
+        elif field == "DNS" and idx is not None:
+            self.config.dns[idx] = (self.config.dns[idx] + delta) % 256
+        elif field == "PREFIX":
+            self.config.prefix = _clamp(self.config.prefix + delta, 8, 30)
+
+    def _save_and_apply(self) -> None:
+        set_static_config(self.config)
+        self._show_feedback("Zapisywanie", "Trwa stosowanie ustawień...")
+        success, message = _configure_eth_static()
+        if success:
+            body = message or "Zakończono"
+        else:
+            body = f"Błąd: {message}"
+        self._show_feedback("Wynik", body)
+
+    def _show_feedback(self, title: str, body: str) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.text((5, 60), title, font=self.manager.font_large, fill=(255, 255, 255))
+        draw.text((5, 100), body, font=self.manager.font_medium, fill=(255, 255, 0))
+        draw.text((5, self.manager.height - 20), "B=powrót", font=self.manager.font_small, fill=(150, 150, 150))
+        self.manager.show()
 
 
 def connect_to_wifi(ssid: str) -> None:
@@ -573,6 +945,8 @@ def main():
     manager.register_screen("main", MainScreen)
     manager.register_screen("wifi", WifiScreen)
     manager.register_screen("eth", EthernetScreen)
+    manager.register_screen("eth_actions", EthernetActionsScreen)
+    manager.register_screen("eth_static_config", EthernetStaticConfigScreen)
     manager.push("main")
 
     button_map: Dict[int, str] = {
