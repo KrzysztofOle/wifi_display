@@ -58,6 +58,16 @@ class InterfaceStatus:
     status: str
 
 
+# --- poprawka: struktura danych dla interfejsu Ethernet — 2025-11-25T16:12:15Z ---
+@dataclass
+class EthernetDetails:
+    link_state: str
+    mode: str
+    ip: str
+    gateway: str
+    dns: str
+
+
 def scan_wifi_iwlist(iface: str = "wlan0") -> list[WifiNetwork]:
     result = subprocess.run(
         ["sudo", "iwlist", iface, "scan"],
@@ -168,6 +178,8 @@ def gather_interface_statuses(active_ssid: Optional[str]) -> List[InterfaceStatu
     wifi_status = "ONLINE" if active_ssid else "OFFLINE"
     wifi_desc = active_ssid or "Brak połączenia"
     wifi_metric = "—"
+    eth_details = get_ethernet_details()
+    eth_status = "ONLINE" if eth_details.link_state.upper() == "UP" else "OFFLINE"
     statuses = [
         InterfaceStatus(
             name="WiFi",
@@ -178,10 +190,10 @@ def gather_interface_statuses(active_ssid: Optional[str]) -> List[InterfaceStatu
         ),
         InterfaceStatus(
             name="ETH",
-            description="—",
-            metric="STATIC/DHCP",
-            ip=get_ip_address("eth0") or "—",
-            status="WIP",
+            description=eth_details.mode,
+            metric=eth_details.link_state,
+            ip=eth_details.ip,
+            status=eth_status,
         ),
         InterfaceStatus(
             name="ZeroTier",
@@ -330,6 +342,8 @@ class MainScreen(Screen):
             selected = self.interfaces[self.cursor] if self.interfaces else None
             if selected and selected.name == "WiFi":
                 self.manager.push("wifi")
+            elif selected and selected.name == "ETH":
+                self.manager.push("eth")
         elif button_name == "B":
             # B to miejsce na narzędzia diagnostyczne (w przyszłości)
             pass
@@ -416,6 +430,97 @@ class WifiScreen(Screen):
             self.render()
 
 
+# --- poprawka: szczegóły i ekran interfejsu Ethernet — 2025-11-25T16:12:15Z ---
+def _parse_nmcli_device_show(interface: str) -> Dict[str, str]:
+    try:
+        result = subprocess.run(
+            ["nmcli", "device", "show", interface],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return {}
+    if result.returncode != 0:
+        return {}
+    data: Dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        data[key.strip()] = value.strip()
+    return data
+
+
+def get_ethernet_details(interface: str = "eth0") -> EthernetDetails:
+    data = _parse_nmcli_device_show(interface)
+    ip_raw = data.get("IP4.ADDRESS[1]", "—")
+    ip = ip_raw.split("/")[0] if ip_raw and "/" in ip_raw else (ip_raw or "—")
+    gateway = data.get("IP4.GATEWAY", "—")
+    dns = data.get("IP4.DNS[1]", "—")
+    mode_raw = data.get("IP4.METHOD", "unknown")
+    link_raw = data.get("GENERAL.STATE", "disconnected")
+    mode = mode_raw.replace("manual", "STATIC").replace("auto", "DHCP").upper()
+    link_state = "UP" if "connected" in link_raw.lower() else "DOWN"
+    if mode not in {"STATIC", "DHCP"}:
+        mode = mode_raw.upper()
+    if ip == "—":
+        fallback_ip = get_ip_address(interface)
+        if fallback_ip:
+            ip = fallback_ip
+    return EthernetDetails(
+        link_state=link_state,
+        mode=mode,
+        ip=ip or "—",
+        gateway=gateway or "—",
+        dns=dns or "—",
+    )
+
+
+class EthernetScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
+        self.details = EthernetDetails("DOWN", "UNKNOWN", "—", "—", "—")
+        self.last_refresh = 0.0
+        self.refresh_interval = 5.0
+
+    def refresh_data(self) -> None:
+        self.details = get_ethernet_details()
+        self.last_refresh = time.monotonic()
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "ETHERNET", font=self.manager.font_large, fill=(0, 0, 0))
+
+        lines = [
+            f"Status: {self.details.link_state}",
+            f"Tryb: {self.details.mode}",
+            f"IP: {self.details.ip}",
+            f"Gateway: {self.details.gateway}",
+            f"DNS: {self.details.dns}",
+        ]
+        y = 50
+        for text in lines:
+            draw.text((5, y), text, font=self.manager.font_medium, fill=(255, 255, 255))
+            y += 28
+        draw.text((5, self.manager.height - 20), "A=odśwież  B=powrót", font=self.manager.font_small, fill=(120, 120, 120))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "A":
+            self.refresh_data()
+            self.render()
+        elif button_name == "B":
+            self.manager.pop()
+
+    def tick(self) -> None:
+        if time.monotonic() - self.last_refresh > self.refresh_interval:
+            self.refresh_data()
+            self.render()
+
+
 def connect_to_wifi(ssid: str) -> None:
     """
     Próba połączenia z podaną siecią przez nmcli jako root (sudo).
@@ -467,6 +572,7 @@ def main():
     )
     manager.register_screen("main", MainScreen)
     manager.register_screen("wifi", WifiScreen)
+    manager.register_screen("eth", EthernetScreen)
     manager.push("main")
 
     button_map: Dict[int, str] = {

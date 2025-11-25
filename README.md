@@ -16,6 +16,17 @@ bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i prz
 - 🔓 Obsługa `nmcli`
 - 🔁 Autostart systemd
 - 💡 Czytelny UI
+- 🌐 Podgląd statusu Ethernet (link, tryb, adres IP)
+
+### Sterowanie usługą `wifi-menu.service`
+
+| Co chcesz zrobić | Komenda |
+|------------------|---------|
+| Zatrzymać aplikację teraz | `sudo systemctl stop wifi-menu.service` |
+| Wyłączyć autostart | `sudo systemctl disable wifi-menu.service` |
+| Sprawdzić status | `systemctl status wifi-menu.service` |
+| Ręcznie uruchomić w przyszłości | `sudo systemctl start wifi-menu.service` |
+| Przywrócić autostart | `sudo systemctl enable wifi-menu.service` |
 
 ---
 
@@ -45,14 +56,16 @@ Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych 
 
 ---
 
-### **2. Moduł Wi‑Fi**
+### 2. Moduł Wi‑Fi
 
-#### Widok listy sieci:
+#### Widok listy sieci':'
+
 - Lista SSID + siła sygnału
 - Aktualna sieć oznaczona `★`
 - Informacja "SAVED" jeśli istnieje profil
 
-#### Akcje:
+#### Akcje':'
+
 - `A` – połączenie (z profilem lub w przyszłości hasło)
 - `B` – odświeżanie
 - Zaplanowane:
@@ -62,14 +75,16 @@ Po uruchomieniu aplikacji użytkownik widzi ekran główny z listą dostępnych 
 
 ---
 
-### **3. Moduł Ethernet (ETH)**
+### 3. Moduł Ethernet (ETH)
 
-#### Widok:
+#### Widok
+
 - LINK UP/DOWN  
 - Tryb: STATIC / DHCP CLIENT / DHCP SERVER  
 - Aktualne IP/GW
 
-#### Akcje:
+#### Akcje
+
 | Tryb | Opis |
 |------|------|
 | DHCP client | Pobiera IP z routera |
@@ -80,15 +95,18 @@ Wprowadzanie adresów planowane jako edycja IP po oktetach.
 
 ---
 
-### **4. Moduł ZeroTier**
+### 4. Moduł ZeroTier
 
-#### Widok:
+#### Widok
+
 Lista sieci:
+
 | Network ID | IP | Status |
 |------------|----|--------|
 | 2873fd00f222b48a | 10.14.55.30 | ONLINE |
 
-#### Akcje:
+#### Akcje
+
 - `A` – szczegóły i przełączenie ONLINE/OFFLINE
 - `B` – menu:
   - [ ] dołączenie do nowej sieci
@@ -100,20 +118,24 @@ Lista sieci:
 ### **5. Narzędzia wspólne (WiFi/ETH/ZT)**
 
 #### **Ping**
+
 - wybór adresu
 - wynik: OK/FAIL, avg ms, packet loss
 
 #### **Skan sieci**
+
 - wykorzystanie ARP + ICMP
 - lista: IP + MAC
 
 Przykład:
+
 | IP | MAC |
 |----|-----|
 | 192.168.9.1 | aa:bb:cc:dd:ee:ff |
 | 192.168.9.33 | 11:22:33:44:55:66 |
 
-#### Dodatkowe:
+#### Dodatkowe
+
 - [ ] test dostępu do internetu
 - [ ] szybki ping do gateway/dns/wybranego hosta
 
@@ -130,6 +152,7 @@ Przykład:
 ---
 
 ## 👤 Autor
+
 Krzysztof Olejnik
 
 MIT License
