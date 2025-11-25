@@ -955,10 +955,17 @@ def connect_to_wifi(ssid: str) -> None:
     Próba połączenia z podaną siecią przez nmcli jako root (sudo).
     """
     LOGGER.info("Próba połączenia z Wi-Fi: %s", ssid)
-    subprocess.run(
+    result = subprocess.run(
         ["sudo", "nmcli", "dev", "wifi", "connect", ssid],
+        capture_output=True,
+        text=True,
         check=False,
     )
+    if result.returncode == 0:
+        LOGGER.info("Połączono z Wi-Fi: %s", ssid)
+    else:
+        error_msg = result.stderr.strip() or result.stdout.strip() or "Nieznany błąd nmcli"
+        LOGGER.error("Nie udało się połączyć z %s: %s", ssid, error_msg)
 
 
 def main():

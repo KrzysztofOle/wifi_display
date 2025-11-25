@@ -193,3 +193,28 @@ def test_setup_logger_writes_to_file(tmp_path, monkeypatch):
     for handler in logger.handlers:
         handler.flush()
     assert log_file.read_text().strip() != ""
+
+
+def test_connect_to_wifi_logs_nmcli_error(monkeypatch):
+    log_entries = []
+
+    class _DummyLogger:
+        def info(self, msg, *args):
+            log_entries.append(("info", msg % args if args else msg))
+
+        def error(self, msg, *args):
+            log_entries.append(("error", msg % args if args else msg))
+
+    monkeypatch.setattr(wifi_display_hat, "LOGGER", _DummyLogger())
+
+    class _Result:
+        returncode = 10
+        stderr = "Error: Connection activation failed: Secrets were required, but not provided."
+        stdout = ""
+
+    monkeypatch.setattr(wifi_display_hat.subprocess, "run", lambda *args, **kwargs: _Result())
+    wifi_display_hat.connect_to_wifi("UnknownSSID")
+    assert any(
+        entry_type == "error" and "Secrets were required" in message
+        for entry_type, message in log_entries
+    )
