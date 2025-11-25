@@ -89,6 +89,14 @@ class StaticIpConfig:
     dns: List[int]
 
 
+# --- poprawka: akcje narzędzi systemowych — 2025-11-25T17:36:04Z ---
+@dataclass
+class ToolAction:
+    title: str
+    description: str
+    command: List[str]
+
+
 LOG_FILE = Path(__file__).with_name("wifi_display.log")
 
 
@@ -428,6 +436,41 @@ ETHERNET_ACTIONS: List[EthernetAction] = [
 ]
 
 
+# --- poprawka: wykonanie poleceń systemowych — 2025-11-25T17:36:04Z ---
+def run_system_action(command: List[str]) -> Tuple[bool, str]:
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Polecenie %s zakończone wyjątkiem", command)
+        return False, f"Wyjątek: {exc}"
+    if result.returncode == 0:
+        LOGGER.info("Polecenie zakończone sukcesem: %s", command)
+        return True, "Polecenie wysłane"
+    message = result.stderr.strip() or result.stdout.strip() or f"Kod: {result.returncode}"
+    LOGGER.error("Polecenie zakończone błędem: %s", message)
+    return False, message
+
+
+# --- poprawka: definicja akcji menu TOOLS — 2025-11-25T17:36:04Z ---
+TOOLS_ACTIONS: List[ToolAction] = [
+    ToolAction(
+        title="REBOOT",
+        description="Uruchom ponownie urządzenie",
+        command=["sudo", "reboot"],
+    ),
+    ToolAction(
+        title="POWEROFF",
+        description="Wyłącz urządzenie",
+        command=["sudo", "poweroff"],
+    ),
+]
+
+
 def gather_interface_statuses(active_ssid: Optional[str]) -> List[InterfaceStatus]:
     """
     Buduje listę statusów interfejsów na potrzeby ekranu głównego.
@@ -452,6 +495,14 @@ def gather_interface_statuses(active_ssid: Optional[str]) -> List[InterfaceStatu
             metric=eth_details.link_state,
             ip=eth_details.ip,
             status=eth_status,
+        ),
+        # --- poprawka: pozycja menu narzędzi — 2025-11-25T17:36:04Z ---
+        InterfaceStatus(
+            name="TOOLS",
+            description="Reboot / Poweroff",
+            metric="MENU",
+            ip="—",
+            status="READY",
         ),
         InterfaceStatus(
             name="ZeroTier",
@@ -605,6 +656,9 @@ class MainScreen(Screen):
                 self.manager.push("wifi")
             elif selected and selected.name == "ETH":
                 self.manager.push("eth")
+            # --- poprawka: obsługa przejścia do menu narzędzi — 2025-11-25T17:36:04Z ---
+            elif selected and selected.name == "TOOLS":
+                self.manager.push("tools")
         elif button_name == "B":
             # B to miejsce na narzędzia diagnostyczne (w przyszłości)
             pass
@@ -744,6 +798,66 @@ class WifiActionsScreen(Screen):
         if time.monotonic() - self.last_refresh > self.refresh_interval:
             self.refresh_data()
             self.render()
+
+
+# --- poprawka: ekran menu narzędzi — 2025-11-25T17:36:04Z ---
+class ToolsScreen(Screen):
+    def __init__(self, manager: "ScreenManager"):
+        super().__init__(manager)
+        self.actions = TOOLS_ACTIONS
+        self.cursor = 0
+
+    def refresh_data(self) -> None:
+        self.cursor = max(0, min(self.cursor, len(self.actions) - 1))
+
+    def render(self) -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.rectangle((0, 0, self.manager.width, 30), fill=(0, 100, 255))
+        draw.text((5, 3), "TOOLS", font=self.manager.font_large, fill=(0, 0, 0))
+
+        start_y = 50
+        line_h = 34
+        for idx, action in enumerate(self.actions):
+            y = start_y + idx * line_h
+            marker = ">" if idx == self.cursor else " "
+            draw.text((5, y), f"{marker} {action.title}", font=self.manager.font_medium, fill=(255, 255, 255))
+            draw.text((20, y + 18), action.description, font=self.manager.font_small, fill=(150, 150, 150))
+        draw.text((5, self.manager.height - 20), "A=wybór  B=powrót", font=self.manager.font_small, fill=(120, 120, 120))
+        self.manager.show()
+
+    def handle_button(self, button_name: str) -> None:
+        if button_name == "UP":
+            self.cursor = max(0, self.cursor - 1)
+            self.render()
+        elif button_name == "DOWN":
+            self.cursor = min(len(self.actions) - 1, self.cursor + 1)
+            self.render()
+        elif button_name == "A":
+            self._execute_current_action()
+        elif button_name == "B":
+            self.manager.pop()
+
+    def _execute_current_action(self) -> None:
+        if not self.actions:
+            return
+        action = self.actions[self.cursor]
+        self._show_feedback(action.title, "Wysyłanie polecenia...")
+        success, message = run_system_action(action.command)
+        status = message or ("Polecenie wysłane" if success else "Brak komunikatu")
+        if success:
+            LOGGER.info("Polecenie narzędziowe sukces: %s", action.title)
+        else:
+            LOGGER.error("Polecenie narzędziowe błąd: %s - %s", action.title, status)
+        self._show_feedback(action.title, status)
+
+    def _show_feedback(self, title: str, body: str, footer: str = "B=powrót") -> None:
+        draw = self.manager.draw_context
+        self.manager.clear()
+        draw.text((5, 60), title, font=self.manager.font_large, fill=(255, 255, 255))
+        draw.text((5, 100), body, font=self.manager.font_medium, fill=(255, 255, 0))
+        draw.text((5, self.manager.height - 20), footer, font=self.manager.font_small, fill=(150, 150, 150))
+        self.manager.show()
 
 
 # --- poprawka: szczegóły i ekran interfejsu Ethernet — 2025-11-25T16:12:15Z ---
@@ -1069,6 +1183,8 @@ def main():
     manager.register_screen("eth", EthernetScreen)
     manager.register_screen("eth_actions", EthernetActionsScreen)
     manager.register_screen("eth_static_config", EthernetStaticConfigScreen)
+    # --- poprawka: rejestracja menu narzędzi — 2025-11-25T17:36:04Z ---
+    manager.register_screen("tools", ToolsScreen)
     manager.push("main")
 
     button_map: Dict[int, str] = {

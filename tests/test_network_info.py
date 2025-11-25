@@ -218,3 +218,28 @@ def test_connect_to_wifi_logs_nmcli_error(monkeypatch):
         entry_type == "error" and "Secrets were required" in message
         for entry_type, message in log_entries
     )
+
+
+# --- poprawka: testy poleceń systemowych — 2025-11-25T17:36:04Z ---
+def test_run_system_action_success(monkeypatch):
+    class _Result:
+        returncode = 0
+        stderr = ""
+        stdout = "done"
+
+    monkeypatch.setattr(wifi_display_hat.subprocess, "run", lambda *_args, **_kwargs: _Result())
+    ok, message = wifi_display_hat.run_system_action(["sudo", "true"])
+    assert ok is True
+    assert "Polecenie" in message
+
+
+def test_run_system_action_failure(monkeypatch):
+    class _Result:
+        returncode = 5
+        stderr = "Permission denied"
+        stdout = ""
+
+    monkeypatch.setattr(wifi_display_hat.subprocess, "run", lambda *_args, **_kwargs: _Result())
+    ok, message = wifi_display_hat.run_system_action(["sudo", "false"])
+    assert ok is False
+    assert "Permission denied" in message

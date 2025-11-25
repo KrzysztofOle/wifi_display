@@ -245,3 +245,63 @@ def test_static_config_screen_applies_changes(monkeypatch):
     screen.handle_button("A")
 
     assert applied["cfg"].ip[0] == (base_cfg.ip[0] + 1) % 256
+
+
+# --- poprawka: testy menu narzędzi — 2025-11-25T17:36:04Z ---
+def test_main_screen_opens_tools_screen(monkeypatch):
+    monkeypatch.setattr(
+        wifi_display_hat,
+        "gather_interface_statuses",
+        lambda active: [
+            wifi_display_hat.InterfaceStatus(
+                name="TOOLS",
+                description="Reboot",
+                metric="MENU",
+                ip="—",
+                status="READY",
+            )
+        ],
+    )
+    monkeypatch.setattr(wifi_display_hat, "get_active_ssid", lambda: None)
+
+    manager = wifi_display_hat.ScreenManager(
+        width=320,
+        height=240,
+        draw=_DummyDraw(),
+        display=_DummyDisplay(),
+        font_large=object(),
+        font_medium=object(),
+        font_small=object(),
+    )
+    manager.register_screen("main", wifi_display_hat.MainScreen)
+    manager.register_screen("tools", wifi_display_hat.ToolsScreen)
+    manager.push("main")
+    tools = manager.get_screen("tools")
+    manager.handle_button("A")
+    assert manager._stack[-1] is tools
+
+
+def test_tools_screen_executes_selected_action(monkeypatch):
+    captured: dict[str, list[str]] = {}
+
+    def _fake_runner(command):
+        captured["cmd"] = command
+        return True, "OK"
+
+    monkeypatch.setattr(wifi_display_hat, "run_system_action", _fake_runner)
+
+    manager = wifi_display_hat.ScreenManager(
+        width=320,
+        height=240,
+        draw=_DummyDraw(),
+        display=_DummyDisplay(),
+        font_large=object(),
+        font_medium=object(),
+        font_small=object(),
+    )
+    manager.register_screen("tools", wifi_display_hat.ToolsScreen)
+    manager.push("tools")
+    screen = manager.get_screen("tools")
+    monkeypatch.setattr(screen, "_show_feedback", lambda *_args, **_kwargs: None)
+    screen.handle_button("A")
+    assert captured["cmd"] == wifi_display_hat.TOOLS_ACTIONS[0].command
