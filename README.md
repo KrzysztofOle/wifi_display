@@ -18,6 +18,7 @@ bez klawiatury i monitora — tylko za pomocą 1.3" wyświetlacza HAT Mini i prz
 - 💡 Czytelny UI
 - 🌐 Podgląd statusu Ethernet (link, tryb, adres IP)
 - 🛠 Menu akcji Ethernet (DHCP/Static/DHCP server)
+- 🧾 Logowanie zdarzeń do pliku `wifi_display.log`
 
 ### Sterowanie usługą `wifi-menu.service`
 
@@ -116,6 +117,11 @@ Wprowadzanie adresów planowane jako edycja IP po oktetach.
 - `X (UP)` / `Y (DOWN)` – zwiększ/zmniejsz bieżący segment (IP, prefix, gateway, DNS).
 - `A` – przejdź do kolejnego segmentu, a po ostatnim zapisz i zastosuj ustawienia.
 - `B` – powrót do menu akcji bez zapisu.
+
+### Logowanie
+
+- Wszystkie kluczowe zdarzenia aplikacji są zapisywane do pliku `wifi_display.log` (w katalogu projektu).
+- Log obejmuje m.in. skanowania Wi-Fi, wywołania `nmcli`, przełączenia ekranów i wyniki operacji sieciowych.
 
 ---
 

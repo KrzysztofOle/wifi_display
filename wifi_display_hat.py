@@ -15,11 +15,13 @@ Funkcje (PL):
 File: wifi_display_hat.py
 """
 
+import logging
 import os
 import re
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from displayhatmini import DisplayHATMini
@@ -87,7 +89,36 @@ class StaticIpConfig:
     dns: List[int]
 
 
+LOG_FILE = Path(__file__).with_name("wifi_display.log")
+
+
+# --- poprawka: konfiguracja loggera plikowego — 2025-11-25T16:12:15Z ---
+def setup_logger() -> logging.Logger:
+    logger = logging.getLogger("wifi_display")
+    if getattr(logger, "_wifi_display_configured", False):
+        return logger
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LOG_FILE.touch(exist_ok=True)
+    except OSError:
+        pass
+    handler = logging.FileHandler(LOG_FILE)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.propagate = False
+    logger._wifi_display_configured = True
+    logger.info("Logger initialized at %s", LOG_FILE)
+    return logger
+
+
+LOGGER = setup_logger()
+
+
 def scan_wifi_iwlist(iface: str = "wlan0") -> list[WifiNetwork]:
+    LOGGER.info("Rozpoczynam skanowanie Wi-Fi na %s", iface)
     result = subprocess.run(
         ["sudo", "iwlist", iface, "scan"],
         capture_output=True,
@@ -131,6 +162,7 @@ def scan_wifi_iwlist(iface: str = "wlan0") -> list[WifiNetwork]:
 
     networks = list(best.values())
     networks.sort(key=lambda x: (x.quality or 0), reverse=True)
+    LOGGER.info("Skan Wi-Fi zakończony, znaleziono %d SSID", len(networks))
     return networks
 
 
@@ -147,7 +179,9 @@ def get_active_ssid():
             continue
         active, ssid = line.split(":", 1)
         if active.lower() == "yes":
+            LOGGER.info("Aktywna sieć Wi-Fi: %s", ssid)
             return ssid
+    LOGGER.info("Brak aktywnej sieci Wi-Fi")
     return None
 
 
@@ -274,6 +308,7 @@ def get_eth_connection_name(interface: str = "eth0") -> str:
 
 def _run_nmcli_commands(commands: List[List[str]]) -> Tuple[bool, str]:
     for cmd in commands:
+        LOGGER.info("Wywołanie nmcli: %s", " ".join(cmd))
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -282,11 +317,14 @@ def _run_nmcli_commands(commands: List[List[str]]) -> Tuple[bool, str]:
         )
         if result.returncode != 0:
             error = result.stderr.strip() or "Nieznany błąd nmcli"
+            LOGGER.error("nmcli zakończone błędem %s: %s", result.returncode, error)
             return False, error
+    LOGGER.info("Polecenia nmcli wykonane pomyślnie")
     return True, "Zastosowano ustawienia"
 
 
 def _configure_eth_dhcp_client(interface: str = "eth0") -> Tuple[bool, str]:
+    LOGGER.info("Konfiguracja DHCP client dla %s", interface)
     connection = get_eth_connection_name(interface)
     commands = [
         [
@@ -322,6 +360,7 @@ def _get_static_config() -> Tuple[str, str, str]:
 def _configure_eth_static(interface: str = "eth0") -> Tuple[bool, str]:
     connection = get_eth_connection_name(interface)
     ip, gateway, dns = _get_static_config()
+    LOGGER.info("Konfiguracja STATIC dla %s: %s %s %s", interface, ip, gateway, dns)
     commands = [
         [
             "sudo",
@@ -348,6 +387,7 @@ def _configure_eth_static(interface: str = "eth0") -> Tuple[bool, str]:
 def _configure_eth_shared(interface: str = "eth0") -> Tuple[bool, str]:
     connection = get_eth_connection_name(interface)
     shared_ip = os.environ.get("ETH_SHARED_IP", "10.42.0.1/24")
+    LOGGER.info("Konfiguracja SHARED dla %s: %s", interface, shared_ip)
     commands = [
         [
             "sudo",
@@ -485,15 +525,18 @@ class ScreenManager:
     def push(self, name: str) -> None:
         screen = self.get_screen(name)
         self._stack.append(screen)
+        LOGGER.info("Aktywowano ekran: %s", name)
         screen.on_show()
 
     def pop(self) -> None:
         if len(self._stack) > 1:
             self._stack.pop()
+            LOGGER.info("Powrót do ekranu: %s", self._stack[-1].__class__.__name__)
             self._stack[-1].on_show()
 
     def handle_button(self, button_name: str) -> None:
         if self._stack:
+            LOGGER.info("Naciśnięto przycisk %s na ekranie %s", button_name, self._stack[-1].__class__.__name__)
             self._stack[-1].handle_button(button_name)
 
     def tick(self) -> None:
@@ -658,8 +701,10 @@ def _parse_nmcli_device_show(interface: str) -> Dict[str, str]:
             check=False,
         )
     except FileNotFoundError:
+        LOGGER.error("Nie znaleziono nmcli podczas pobierania %s", interface)
         return {}
     if result.returncode != 0:
+        LOGGER.error("nmcli zwróciło błąd %s dla %s", result.returncode, interface)
         return {}
     data: Dict[str, str] = {}
     for line in result.stdout.splitlines():
@@ -789,6 +834,7 @@ class EthernetActionsScreen(Screen):
             return
         action = self.actions[self.cursor]
         if action.screen:
+            LOGGER.info("Przejście do ekranu akcji: %s", action.screen)
             self.manager.push(action.screen)
             return
         if not action.handler:
@@ -797,8 +843,10 @@ class EthernetActionsScreen(Screen):
         success, message = action.handler()
         if success:
             body = message or "Zakończono powodzeniem"
+            LOGGER.info("Akcja %s zakończona sukcesem: %s", action.title, message)
         else:
             body = f"Błąd: {message}"
+            LOGGER.error("Akcja %s zakończona błędem: %s", action.title, message)
         self._show_status(action.title, body)
 
 
@@ -876,12 +924,21 @@ class EthernetStaticConfigScreen(Screen):
 
     def _save_and_apply(self) -> None:
         set_static_config(self.config)
+        LOGGER.info(
+            "Zapisano konfigurację statyczną: IP=%s/%s GW=%s DNS=%s",
+            _format_address(self.config.ip),
+            self.config.prefix,
+            _format_address(self.config.gateway),
+            _format_address(self.config.dns),
+        )
         self._show_feedback("Zapisywanie", "Trwa stosowanie ustawień...")
         success, message = _configure_eth_static()
         if success:
             body = message or "Zakończono"
+            LOGGER.info("Zastosowano statyczną konfigurację Ethernet")
         else:
             body = f"Błąd: {message}"
+            LOGGER.error("Nie udało się zastosować konfiguracji statycznej: %s", message)
         self._show_feedback("Wynik", body)
 
     def _show_feedback(self, title: str, body: str) -> None:
@@ -897,6 +954,7 @@ def connect_to_wifi(ssid: str) -> None:
     """
     Próba połączenia z podaną siecią przez nmcli jako root (sudo).
     """
+    LOGGER.info("Próba połączenia z Wi-Fi: %s", ssid)
     subprocess.run(
         ["sudo", "nmcli", "dev", "wifi", "connect", ssid],
         check=False,
@@ -904,6 +962,7 @@ def connect_to_wifi(ssid: str) -> None:
 
 
 def main():
+    LOGGER.info("Start aplikacji WiFi Display")
     width = DisplayHATMini.WIDTH
     height = DisplayHATMini.HEIGHT
 
@@ -977,6 +1036,7 @@ def main():
     finally:
         GPIO.cleanup()
         display.set_backlight(0.0)
+        LOGGER.info("Zatrzymano aplikację WiFi Display")
 
 
 if __name__ == "__main__":

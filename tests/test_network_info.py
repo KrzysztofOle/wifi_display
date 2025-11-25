@@ -3,16 +3,19 @@
 Scope (EN):
 - Validates iwlist parsing, nmcli profile filtering, Ethernet normalization.
 - Ensures interface summary aggregation marks correct statuses.
+- Covers logging initialization to disk.
 
 Zakres (PL):
 - Weryfikuje parsowanie iwlist, filtrowanie profili nmcli i normalizację ETH.
 - Sprawdza, że zbiorcze statusy interfejsów mają właściwe flagi.
+- Testuje inicjalizację loggera plikowego.
 
 File: tests/test_network_info.py
 """
 
 # --- poprawka: dodanie testów helperów sieciowych — 2025-11-25T16:12:15Z ---
 
+import logging
 import sys
 import types
 
@@ -176,3 +179,17 @@ def test_gather_interface_statuses_combines_wifi_and_eth(monkeypatch):
     assert wifi_status.ip == "10.0.0.5"
     assert eth_status.description == "STATIC"
     assert eth_status.status == "ONLINE"
+
+
+def test_setup_logger_writes_to_file(tmp_path, monkeypatch):
+    log_file = tmp_path / "wifi_display.log"
+    monkeypatch.setattr(wifi_display_hat, "LOG_FILE", log_file)
+    logger = logging.getLogger("wifi_display")
+    logger.handlers.clear()
+    if hasattr(logger, "_wifi_display_configured"):
+        delattr(logger, "_wifi_display_configured")
+    wifi_display_hat.setup_logger()
+    logger.info("Test log entry")
+    for handler in logger.handlers:
+        handler.flush()
+    assert log_file.read_text().strip() != ""
